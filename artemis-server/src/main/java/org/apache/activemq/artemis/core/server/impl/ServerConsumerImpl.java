@@ -50,6 +50,7 @@ import org.apache.activemq.artemis.core.server.Queue;
 import org.apache.activemq.artemis.core.server.ServerConsumer;
 import org.apache.activemq.artemis.core.server.ServerMessage;
 import org.apache.activemq.artemis.core.server.ServerSession;
+import org.apache.activemq.artemis.core.server.SlowConsumerDetectionListener;
 import org.apache.activemq.artemis.core.server.management.ManagementService;
 import org.apache.activemq.artemis.core.server.management.Notification;
 import org.apache.activemq.artemis.core.transaction.Transaction;
@@ -87,8 +88,6 @@ public class ServerConsumerImpl implements ServerConsumer, ReadyListener {
    private final boolean supportLargeMessage;
 
    private Object protocolContext;
-
-   private final ActiveMQServer server;
 
    /**
     * We get a readLock when a message is handled, and return the readLock when the message is finally delivered
@@ -152,9 +151,8 @@ public class ServerConsumerImpl implements ServerConsumer, ReadyListener {
                              final SessionCallback callback,
                              final boolean preAcknowledge,
                              final boolean strictUpdateDeliveryCount,
-                             final ManagementService managementService,
-                             final ActiveMQServer server) throws Exception {
-      this(id, session, binding, filter, started, browseOnly, storageManager, callback, preAcknowledge, strictUpdateDeliveryCount, managementService, true, null, server);
+                             final ManagementService managementService) throws Exception {
+      this(id, session, binding, filter, started, browseOnly, storageManager, callback, preAcknowledge, strictUpdateDeliveryCount, managementService, true, null);
    }
 
    public ServerConsumerImpl(final long id,
@@ -169,8 +167,7 @@ public class ServerConsumerImpl implements ServerConsumer, ReadyListener {
                              final boolean strictUpdateDeliveryCount,
                              final ManagementService managementService,
                              final boolean supportLargeMessage,
-                             final Integer credits,
-                             final ActiveMQServer server) throws Exception {
+                             final Integer credits) throws Exception {
       this.id = id;
 
       this.filter = filter;
@@ -215,8 +212,6 @@ public class ServerConsumerImpl implements ServerConsumer, ReadyListener {
             availableCredits.set(credits);
          }
       }
-
-      this.server = server;
    }
 
    @Override
@@ -386,9 +381,7 @@ public class ServerConsumerImpl implements ServerConsumer, ReadyListener {
       }
       finally {
          lockDelivery.readLock().unlock();
-         callback.afterDelivery();
       }
-
    }
 
    @Override
@@ -569,19 +562,12 @@ public class ServerConsumerImpl implements ServerConsumer, ReadyListener {
    @Override
    public void setStarted(final boolean started) {
       synchronized (lock) {
-         boolean locked = lockDelivery();
-
-         // This is to make sure nothing would sneak to the client while started = false
-         // the client will stop the session and perform a rollback in certain cases.
-         // in case something sneaks to the client you could get to messaging delivering forever until
-         // you restart the server
+         lockDelivery.writeLock().lock();
          try {
             this.started = browseOnly || started;
          }
          finally {
-            if (locked) {
-               lockDelivery.writeLock().unlock();
-            }
+            lockDelivery.writeLock().unlock();
          }
       }
 
@@ -591,38 +577,21 @@ public class ServerConsumerImpl implements ServerConsumer, ReadyListener {
       }
    }
 
-   private boolean lockDelivery() {
-      try {
-         if (!lockDelivery.writeLock().tryLock(30, TimeUnit.SECONDS)) {
-            ActiveMQServerLogger.LOGGER.timeoutLockingConsumer();
-            if (server != null) {
-               server.threadDump();
-            }
-            return false;
-         }
-         return true;
-      }
-      catch (Exception e) {
-         ActiveMQServerLogger.LOGGER.warn(e.getMessage(), e);
-         return false;
-      }
-   }
-
    @Override
    public void setTransferring(final boolean transferring) {
       synchronized (lock) {
-         // This is to make sure that the delivery process has finished any pending delivery
-         // otherwise a message may sneak in on the client while we are trying to stop the consumer
-         boolean locked = lockDelivery();
-         try {
-            this.transferring = transferring;
-         }
-         finally {
-            if (locked) {
-               lockDelivery.writeLock().unlock();
-            }
-         }
+         this.transferring = transferring;
       }
+
+      // This is to make sure that the delivery process has finished any pending delivery
+      // otherwise a message may sneak in on the client while we are trying to stop the consumer
+      try {
+         lockDelivery.writeLock().lock();
+      }
+      finally {
+         lockDelivery.writeLock().unlock();
+      }
+
 
       // Outside the lock
       if (transferring) {

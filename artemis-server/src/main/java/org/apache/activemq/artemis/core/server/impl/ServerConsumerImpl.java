@@ -89,6 +89,8 @@ public class ServerConsumerImpl implements ServerConsumer, ReadyListener {
 
    private Object protocolContext;
 
+   private SlowConsumerDetectionListener slowConsumerListener;
+
    /**
     * We get a readLock when a message is handled, and return the readLock when the message is finally delivered
     * When stopping the consumer we need to get a writeLock to make sure we had all delivery finished
@@ -221,6 +223,21 @@ public class ServerConsumerImpl implements ServerConsumer, ReadyListener {
 
    // ServerConsumer implementation
    // ----------------------------------------------------------------------
+
+   @Override
+   public void setlowConsumerDetection(SlowConsumerDetectionListener listener) {
+      this.slowConsumerListener = listener;
+   }
+
+   @Override
+   public SlowConsumerDetectionListener getSlowConsumerDetecion() {
+      return slowConsumerListener;
+   }
+
+   @Override
+   public void fireSlowConsumer() {
+      slowConsumerListener.onSlowConsumer(this);
+   }
 
    @Override
    public Object getProtocolContext() {

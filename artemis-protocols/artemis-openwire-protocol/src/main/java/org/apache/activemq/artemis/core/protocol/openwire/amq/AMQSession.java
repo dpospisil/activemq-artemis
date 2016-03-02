@@ -542,4 +542,8 @@ public class AMQSession implements SessionCallback {
          }
       }
    }
+
+   public OpenWireConnection getConnection() {
+      return connection;
+   }
 }

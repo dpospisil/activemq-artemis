@@ -89,6 +89,8 @@ public class ServerConsumerImpl implements ServerConsumer, ReadyListener {
 
    private Object protocolContext;
 
+   private final ActiveMQServer server;
+
    private SlowConsumerDetectionListener slowConsumerListener;
 
    /**
@@ -153,8 +155,9 @@ public class ServerConsumerImpl implements ServerConsumer, ReadyListener {
                              final SessionCallback callback,
                              final boolean preAcknowledge,
                              final boolean strictUpdateDeliveryCount,
-                             final ManagementService managementService) throws Exception {
-      this(id, session, binding, filter, started, browseOnly, storageManager, callback, preAcknowledge, strictUpdateDeliveryCount, managementService, true, null);
+                             final ManagementService managementService,
+                             final ActiveMQServer server) throws Exception {
+      this(id, session, binding, filter, started, browseOnly, storageManager, callback, preAcknowledge, strictUpdateDeliveryCount, managementService, true, null, server);
    }
 
    public ServerConsumerImpl(final long id,
@@ -169,7 +172,8 @@ public class ServerConsumerImpl implements ServerConsumer, ReadyListener {
                              final boolean strictUpdateDeliveryCount,
                              final ManagementService managementService,
                              final boolean supportLargeMessage,
-                             final Integer credits) throws Exception {
+                             final Integer credits,
+                             final ActiveMQServer server) throws Exception {
       this.id = id;
 
       this.filter = filter;
@@ -214,6 +218,8 @@ public class ServerConsumerImpl implements ServerConsumer, ReadyListener {
             availableCredits.set(credits);
          }
       }
+
+      this.server = server;
    }
 
    @Override
@@ -398,7 +404,9 @@ public class ServerConsumerImpl implements ServerConsumer, ReadyListener {
       }
       finally {
          lockDelivery.readLock().unlock();
+         callback.afterDelivery();
       }
+
    }
 
    @Override
@@ -583,12 +591,19 @@ public class ServerConsumerImpl implements ServerConsumer, ReadyListener {
    @Override
    public void setStarted(final boolean started) {
       synchronized (lock) {
-         lockDelivery.writeLock().lock();
+         boolean locked = lockDelivery();
+
+         // This is to make sure nothing would sneak to the client while started = false
+         // the client will stop the session and perform a rollback in certain cases.
+         // in case something sneaks to the client you could get to messaging delivering forever until
+         // you restart the server
          try {
             this.started = browseOnly || started;
          }
          finally {
-            lockDelivery.writeLock().unlock();
+            if (locked) {
+               lockDelivery.writeLock().unlock();
+            }
          }
       }
 
@@ -598,21 +613,38 @@ public class ServerConsumerImpl implements ServerConsumer, ReadyListener {
       }
    }
 
+   private boolean lockDelivery() {
+      try {
+         if (!lockDelivery.writeLock().tryLock(30, TimeUnit.SECONDS)) {
+            ActiveMQServerLogger.LOGGER.timeoutLockingConsumer();
+            if (server != null) {
+               server.threadDump();
+            }
+            return false;
+         }
+         return true;
+      }
+      catch (Exception e) {
+         ActiveMQServerLogger.LOGGER.warn(e.getMessage(), e);
+         return false;
+      }
+   }
+
    @Override
    public void setTransferring(final boolean transferring) {
       synchronized (lock) {
-         this.transferring = transferring;
+         // This is to make sure that the delivery process has finished any pending delivery
+         // otherwise a message may sneak in on the client while we are trying to stop the consumer
+         boolean locked = lockDelivery();
+         try {
+            this.transferring = transferring;
+         }
+         finally {
+            if (locked) {
+               lockDelivery.writeLock().unlock();
+            }
+         }
       }
-
-      // This is to make sure that the delivery process has finished any pending delivery
-      // otherwise a message may sneak in on the client while we are trying to stop the consumer
-      try {
-         lockDelivery.writeLock().lock();
-      }
-      finally {
-         lockDelivery.writeLock().unlock();
-      }
-
 
       // Outside the lock
       if (transferring) {

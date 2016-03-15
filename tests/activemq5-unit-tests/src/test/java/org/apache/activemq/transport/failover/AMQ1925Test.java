@@ -33,8 +33,6 @@ import javax.jms.MessageProducer;
 import javax.jms.Session;
 import javax.jms.TextMessage;
 import javax.jms.TransactionRolledBackException;
-import javax.management.MBeanServer;
-import javax.management.MBeanServerFactory;
 
 import org.apache.activemq.ActiveMQConnectionFactory;
 import org.apache.activemq.artemis.api.core.SimpleString;
@@ -235,32 +233,39 @@ public class AMQ1925Test extends OpenwireArtemisBaseTest implements ExceptionLis
       MessageConsumer consumer = session.createConsumer(session.createQueue(QUEUE_NAME));
 
       boolean restartDone = false;
-      for (int i = 0; i < MESSAGE_COUNT; i++) {
-         Message message = consumer.receive(5000);
-         Assert.assertNotNull(message);
+      try {
+         for (int i = 0; i < MESSAGE_COUNT; i++) {
+            Message message = consumer.receive(5000);
+            Assert.assertNotNull(message);
 
-         if (i == 222 && !restartDone) {
-            // Simulate broker failure & restart
-            bs.stop();
-            bs = createNewServer();
-            bs.start();
-            restartDone = true;
-         }
+            if (i == 222 && !restartDone) {
+               // Simulate broker failure & restart
+               bs.stop();
+               bs = createNewServer();
+               bs.start();
+               restartDone = true;
+            }
 
-         Assert.assertEquals(i, message.getIntProperty(PROPERTY_MSG_NUMBER));
-         try {
-            session.commit();
+            Assert.assertEquals(i, message.getIntProperty(PROPERTY_MSG_NUMBER));
+            try {
+               session.commit();
+            }
+            catch (TransactionRolledBackException expectedOnOccasion) {
+               log.info("got rollback: " + expectedOnOccasion);
+               i--;
+            }
          }
-         catch (TransactionRolledBackException expectedOnOccasion) {
-            log.info("got rollback: " + expectedOnOccasion);
-            i--;
-         }
+         Assert.assertNull(consumer.receive(500));
       }
-      Assert.assertNull(consumer.receive(500));
-
-      consumer.close();
-      session.close();
-      connection.close();
+      catch (Exception eee) {
+         log.error("got exception", eee);
+         throw eee;
+      }
+      finally {
+         consumer.close();
+         session.close();
+         connection.close();
+      }
 
       assertQueueEmpty();
       Assert.assertNull("no exception on connection listener: " + exception, exception);
@@ -368,7 +373,6 @@ public class AMQ1925Test extends OpenwireArtemisBaseTest implements ExceptionLis
       } catch (Exception e) {
          log.error(e);
       }
-
    }
 
    public void onException(JMSException exception) {

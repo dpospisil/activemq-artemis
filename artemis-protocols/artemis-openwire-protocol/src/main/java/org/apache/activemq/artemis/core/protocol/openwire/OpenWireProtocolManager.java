@@ -488,6 +488,11 @@ public class OpenWireProtocolManager implements ProtocolManager<Interceptor>, Cl
       if (txSession != null) {
          txSession.rollback(info);
       }
+      else if (info.getTransactionId().isLocalTransaction()) {
+         //during a broker restart, recovered local transaction may not be registered
+         //in that case we ignore and let the tx removed silently by connection.
+         //see AMQ1925Test.testAMQ1925_TXBegin
+      }
       else {
          throw newXAException("Transaction '" + info.getTransactionId() + "' has not been started.", XAException.XAER_NOTA);
       }

@@ -21,7 +21,6 @@ import org.apache.activemq.ActiveMQConnectionFactory;
 import org.apache.activemq.ActiveMQMessageConsumer;
 import org.apache.activemq.AutoFailTestSupport;
 import org.apache.activemq.artemis.core.protocol.openwire.OpenWireConnection;
-import org.apache.activemq.artemis.core.protocol.openwire.amq.AMQConnectionContext;
 import org.apache.activemq.artemis.jms.server.embedded.EmbeddedJMS;
 import org.apache.activemq.broker.artemiswrapper.OpenwireArtemisBaseTest;
 import org.apache.activemq.transport.TransportListener;
@@ -541,114 +540,120 @@ public class FailoverTransactionTest extends OpenwireArtemisBaseTest {
       doByteman.set(true);
 
       Vector<Connection> connections = new Vector<>();
+      Connection connection = null;
+      Message msg = null;
+      Queue destination = null;
       ActiveMQConnectionFactory cf = new ActiveMQConnectionFactory("failover:(" + url + ")");
-      configureConnectionFactory(cf);
-      Connection connection = cf.createConnection();
-      connection.start();
-      connections.add(connection);
-      final Session producerSession = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
-      final Queue destination = producerSession.createQueue(QUEUE_NAME + "?consumer.prefetchSize=1");
+      try {
+         configureConnectionFactory(cf);
+         connection = cf.createConnection();
+         connection.start();
+         connections.add(connection);
+         final Session producerSession = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
+         destination = producerSession.createQueue(QUEUE_NAME + "?consumer.prefetchSize=1");
 
-      connection = cf.createConnection();
-      connection.start();
-      connections.add(connection);
-      final Session consumerSession1 = connection.createSession(true, Session.AUTO_ACKNOWLEDGE);
+         connection = cf.createConnection();
+         connection.start();
+         connections.add(connection);
+         final Session consumerSession1 = connection.createSession(true, Session.AUTO_ACKNOWLEDGE);
 
-      connection = cf.createConnection();
-      connection.start();
-      connections.add(connection);
-      final Session consumerSession2 = connection.createSession(true, Session.AUTO_ACKNOWLEDGE);
+         connection = cf.createConnection();
+         connection.start();
+         connections.add(connection);
+         final Session consumerSession2 = connection.createSession(true, Session.AUTO_ACKNOWLEDGE);
 
-      final MessageConsumer consumer1 = consumerSession1.createConsumer(destination);
-      final MessageConsumer consumer2 = consumerSession2.createConsumer(destination);
+         final MessageConsumer consumer1 = consumerSession1.createConsumer(destination);
+         final MessageConsumer consumer2 = consumerSession2.createConsumer(destination);
 
-      produceMessage(producerSession, destination);
-      produceMessage(producerSession, destination);
+         produceMessage(producerSession, destination);
+         produceMessage(producerSession, destination);
 
-      final Vector<Message> receivedMessages = new Vector<>();
-      final CountDownLatch commitDoneLatch = new CountDownLatch(1);
-      final AtomicBoolean gotTransactionRolledBackException = new AtomicBoolean(false);
-      new Thread() {
-         public void run() {
-            LOG.info("doing async commit after consume...");
-            try {
-               Message msg = consumer1.receive(20000);
-               LOG.info("consumer1 first attempt got message: " + msg);
-               receivedMessages.add(msg);
-
-               // give some variance to the runs
-               TimeUnit.SECONDS.sleep(pauseSeconds * 2);
-
-               // should not get a second message as there are two messages and two consumers
-               // and prefetch=1, but with failover and unordered connection restore it can get the second
-               // message.
-
-               // For the transaction to complete it needs to get the same one or two messages
-               // again so that the acks line up.
-               // If redelivery order is different, the commit should fail with an ex
-               //
-               msg = consumer1.receive(5000);
-               LOG.info("consumer1 second attempt got message: " + msg);
-               if (msg != null) {
-                  receivedMessages.add(msg);
-               }
-
-               LOG.info("committing consumer1 session: " + receivedMessages.size() + " messsage(s)");
+         final Vector<Message> receivedMessages = new Vector<>();
+         final CountDownLatch commitDoneLatch = new CountDownLatch(1);
+         final AtomicBoolean gotTransactionRolledBackException = new AtomicBoolean(false);
+         new Thread() {
+            public void run() {
+               LOG.info("doing async commit after consume...");
                try {
-                  consumerSession1.commit();
-               }
-               catch (JMSException expectedSometimes) {
-                  LOG.info("got exception ex on commit", expectedSometimes);
-                  if (expectedSometimes instanceof TransactionRolledBackException) {
-                     gotTransactionRolledBackException.set(true);
-                     // ok, message one was not replayed so we expect the rollback
-                  }
-                  else {
-                     throw expectedSometimes;
+                  Message msg = consumer1.receive(20000);
+                  LOG.info("consumer1 first attempt got message: " + msg);
+                  receivedMessages.add(msg);
+
+                  // give some variance to the runs
+                  TimeUnit.SECONDS.sleep(pauseSeconds * 2);
+
+                  // should not get a second message as there are two messages and two consumers
+                  // and prefetch=1, but with failover and unordered connection restore it can get the second
+                  // message.
+
+                  // For the transaction to complete it needs to get the same one or two messages
+                  // again so that the acks line up.
+                  // If redelivery order is different, the commit should fail with an ex
+                  //
+                  msg = consumer1.receive(5000);
+                  LOG.info("consumer1 second attempt got message: " + msg);
+                  if (msg != null) {
+                     receivedMessages.add(msg);
                   }
 
+                  LOG.info("committing consumer1 session: " + receivedMessages.size() + " messsage(s)");
+                  try {
+                     consumerSession1.commit();
+                  }
+                  catch (JMSException expectedSometimes) {
+                     LOG.info("got exception ex on commit", expectedSometimes);
+                     if (expectedSometimes instanceof TransactionRolledBackException) {
+                        gotTransactionRolledBackException.set(true);
+                        // ok, message one was not replayed so we expect the rollback
+                     }
+                     else {
+                        throw expectedSometimes;
+                     }
+
+                  }
+                  commitDoneLatch.countDown();
+                  LOG.info("done async commit");
                }
-               commitDoneLatch.countDown();
-               LOG.info("done async commit");
+               catch (Exception e) {
+                  e.printStackTrace();
+               }
             }
-            catch (Exception e) {
-               e.printStackTrace();
-            }
+         }.start();
+
+         // will be stopped by the plugin
+         brokerStopLatch.await();
+         broker = createBroker();
+         broker.start();
+         doByteman.set(false);
+
+         Assert.assertTrue("tx committed through failover", commitDoneLatch.await(30, TimeUnit.SECONDS));
+
+         LOG.info("received message count: " + receivedMessages.size());
+
+         // new transaction
+         msg = consumer1.receive(gotTransactionRolledBackException.get() ? 5000 : 20000);
+         LOG.info("post: from consumer1 received: " + msg);
+         if (gotTransactionRolledBackException.get()) {
+            Assert.assertNotNull("should be available again after commit rollback ex", msg);
          }
-      }.start();
+         else {
+            Assert.assertNull("should be nothing left for consumer as receive should have committed", msg);
+         }
+         consumerSession1.commit();
 
-      // will be stopped by the plugin
-      brokerStopLatch.await();
-      broker = createBroker();
-      broker.start();
-      doByteman.set(false);
-
-      Assert.assertTrue("tx committed through failover", commitDoneLatch.await(30, TimeUnit.SECONDS));
-
-      LOG.info("received message count: " + receivedMessages.size());
-
-      // new transaction
-      Message msg = consumer1.receive(gotTransactionRolledBackException.get() ? 5000 : 20000);
-      LOG.info("post: from consumer1 received: " + msg);
-      if (gotTransactionRolledBackException.get()) {
-         Assert.assertNotNull("should be available again after commit rollback ex", msg);
+         if (gotTransactionRolledBackException.get() || !gotTransactionRolledBackException.get() && receivedMessages.size() == 1) {
+            // just one message successfully consumed or none consumed
+            // consumer2 should get other message
+            msg = consumer2.receive(10000);
+            LOG.info("post: from consumer2 received: " + msg);
+            Assert.assertNotNull("got second message on consumer2", msg);
+            consumerSession2.commit();
+         }
       }
-      else {
-         Assert.assertNull("should be nothing left for consumer as receive should have committed", msg);
-      }
-      consumerSession1.commit();
-
-      if (gotTransactionRolledBackException.get() || !gotTransactionRolledBackException.get() && receivedMessages.size() == 1) {
-         // just one message successfully consumed or none consumed
-         // consumer2 should get other message
-         msg = consumer2.receive(10000);
-         LOG.info("post: from consumer2 received: " + msg);
-         Assert.assertNotNull("got second message on consumer2", msg);
-         consumerSession2.commit();
-      }
-
-      for (Connection c : connections) {
-         c.close();
+      finally {
+         for (Connection c : connections) {
+            c.close();
+         }
       }
 
       // ensure no dangling messages with fresh broker etc
@@ -694,111 +699,115 @@ public class FailoverTransactionTest extends OpenwireArtemisBaseTest {
       doByteman.set(true);
 
       Vector<Connection> connections = new Vector<>();
-      ActiveMQConnectionFactory cf = new ActiveMQConnectionFactory("failover:(" + url + ")");
-      configureConnectionFactory(cf);
-      Connection connection = cf.createConnection();
-      connection.start();
-      Session producerSession = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
-      final Queue destination = producerSession.createQueue(QUEUE_NAME + "?consumer.prefetchSize=1");
-
-      produceMessage(producerSession, destination);
-      connection.close();
-
-      connection = cf.createConnection();
-      connection.start();
-      connections.add(connection);
-      final Session consumerSession = connection.createSession(false, Session.CLIENT_ACKNOWLEDGE);
-
-      final int sessionCount = 10;
-      final Stack<Session> sessions = new Stack<>();
-      for (int i = 0; i < sessionCount; i++) {
-         sessions.push(connection.createSession(false, Session.AUTO_ACKNOWLEDGE));
-      }
-
-      final int consumerCount = 1000;
-      final Deque<MessageConsumer> consumers = new ArrayDeque<>();
-      for (int i = 0; i < consumerCount; i++) {
-         consumers.push(consumerSession.createConsumer(destination));
-      }
-
       final ExecutorService executorService = Executors.newCachedThreadPool();
 
-      final FailoverTransport failoverTransport = ((ActiveMQConnection) connection).getTransport().narrow(FailoverTransport.class);
-      final TransportListener delegate = failoverTransport.getTransportListener();
-      failoverTransport.setTransportListener(new TransportListener() {
-         @Override
-         public void onCommand(Object command) {
-            delegate.onCommand(command);
+      try {
+         ActiveMQConnectionFactory cf = new ActiveMQConnectionFactory("failover:(" + url + ")");
+         configureConnectionFactory(cf);
+         Connection connection = cf.createConnection();
+         connection.start();
+         Session producerSession = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
+         final Queue destination = producerSession.createQueue(QUEUE_NAME + "?consumer.prefetchSize=1");
+
+         produceMessage(producerSession, destination);
+         connection.close();
+
+         connection = cf.createConnection();
+         connection.start();
+         connections.add(connection);
+         final Session consumerSession = connection.createSession(false, Session.CLIENT_ACKNOWLEDGE);
+
+         final int sessionCount = 10;
+         final Stack<Session> sessions = new Stack<>();
+         for (int i = 0; i < sessionCount; i++) {
+            sessions.push(connection.createSession(false, Session.AUTO_ACKNOWLEDGE));
          }
 
-         @Override
-         public void onException(IOException error) {
-            delegate.onException(error);
+         final int consumerCount = 1000;
+         final Deque<MessageConsumer> consumers = new ArrayDeque<>();
+         for (int i = 0; i < consumerCount; i++) {
+            consumers.push(consumerSession.createConsumer(destination));
          }
 
-         @Override
-         public void transportInterupted() {
-
-            LOG.error("Transport interrupted: " + failoverTransport, new RuntimeException("HERE"));
-            for (int i = 0; i < consumerCount && !consumers.isEmpty(); i++) {
-
-               executorService.execute(new Runnable() {
-                  public void run() {
-                     MessageConsumer localConsumer = null;
-                     try {
-                        synchronized (delegate) {
-                           localConsumer = consumers.pop();
-                        }
-                        localConsumer.receive(1);
-
-                        LOG.info("calling close() " + ((ActiveMQMessageConsumer) localConsumer).getConsumerId());
-                        localConsumer.close();
-                     }
-                     catch (NoSuchElementException nse) {
-                     }
-                     catch (Exception ignored) {
-                        LOG.error("Ex on: " + ((ActiveMQMessageConsumer) localConsumer).getConsumerId(), ignored);
-                     }
-                  }
-               });
+         final FailoverTransport failoverTransport = ((ActiveMQConnection) connection).getTransport().narrow(FailoverTransport.class);
+         final TransportListener delegate = failoverTransport.getTransportListener();
+         failoverTransport.setTransportListener(new TransportListener() {
+            @Override
+            public void onCommand(Object command) {
+               delegate.onCommand(command);
             }
 
-            delegate.transportInterupted();
+            @Override
+            public void onException(IOException error) {
+               delegate.onException(error);
+            }
+
+            @Override
+            public void transportInterupted() {
+
+               LOG.error("Transport interrupted: " + failoverTransport, new RuntimeException("HERE"));
+               for (int i = 0; i < consumerCount && !consumers.isEmpty(); i++) {
+
+                  executorService.execute(new Runnable() {
+                     public void run() {
+                        MessageConsumer localConsumer = null;
+                        try {
+                           synchronized (delegate) {
+                              localConsumer = consumers.pop();
+                           }
+                           localConsumer.receive(1);
+
+                           LOG.info("calling close() " + ((ActiveMQMessageConsumer) localConsumer).getConsumerId());
+                           localConsumer.close();
+                        }
+                        catch (NoSuchElementException nse) {
+                        }
+                        catch (Exception ignored) {
+                           LOG.error("Ex on: " + ((ActiveMQMessageConsumer) localConsumer).getConsumerId(), ignored);
+                        }
+                     }
+                  });
+               }
+
+               delegate.transportInterupted();
+            }
+
+            @Override
+            public void transportResumed() {
+               delegate.transportResumed();
+            }
+         });
+
+         MessageConsumer consumer = null;
+         synchronized (delegate) {
+            consumer = consumers.pop();
+         }
+         LOG.info("calling close to trigger broker stop " + ((ActiveMQMessageConsumer) consumer).getConsumerId());
+         consumer.close();
+
+         // will be stopped by the plugin
+         brokerStopLatch.await();
+         doByteman.set(false);
+         broker = createBroker();
+         broker.start();
+
+         consumer = consumerSession.createConsumer(destination);
+         LOG.info("finally consuming message: " + ((ActiveMQMessageConsumer) consumer).getConsumerId());
+
+         Message msg = null;
+         for (int i = 0; i < 4 && msg == null; i++) {
+            msg = consumer.receive(1000);
          }
 
-         @Override
-         public void transportResumed() {
-            delegate.transportResumed();
+         LOG.info("post: from consumer1 received: " + msg);
+         Assert.assertNotNull("got message after failover", msg);
+         msg.acknowledge();
+      }
+      finally {
+         executorService.shutdown();
+         for (Connection c : connections) {
+            c.close();
          }
-      });
-
-      MessageConsumer consumer = null;
-      synchronized (delegate) {
-         consumer = consumers.pop();
-      }
-      LOG.info("calling close to trigger broker stop " + ((ActiveMQMessageConsumer) consumer).getConsumerId());
-      consumer.close();
-
-      // will be stopped by the plugin
-      brokerStopLatch.await();
-      doByteman.set(false);
-      broker = createBroker();
-      broker.start();
-
-      consumer = consumerSession.createConsumer(destination);
-      LOG.info("finally consuming message: " + ((ActiveMQMessageConsumer) consumer).getConsumerId());
-
-      Message msg = null;
-      for (int i = 0; i < 4 && msg == null; i++) {
-         msg = consumer.receive(1000);
-      }
-
-      LOG.info("post: from consumer1 received: " + msg);
-      Assert.assertNotNull("got message after failover", msg);
-      msg.acknowledge();
-
-      for (Connection c : connections) {
-         c.close();
       }
    }
 

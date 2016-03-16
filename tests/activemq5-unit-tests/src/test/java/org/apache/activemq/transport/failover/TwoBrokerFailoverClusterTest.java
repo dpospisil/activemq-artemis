@@ -27,7 +27,6 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
-import javax.jms.Connection;
 import javax.jms.MessageConsumer;
 import javax.jms.Queue;
 import javax.jms.Session;
@@ -80,8 +79,12 @@ public class TwoBrokerFailoverClusterTest extends OpenwireArtemisBaseTest {
 
    @Before
    public void setUp() throws Exception {
-      Configuration config0 = createConfig("127.0.0.1", 0);
-      Configuration config1 = createConfig("127.0.0.1", 1);
+      HashMap<String, String> map = new HashMap<>();
+      map.put("rebalanceClusterClients", "true");
+      map.put("updateClusterClients", "true");
+      map.put("updateClusterClientsOnRemove", "true");
+      Configuration config0 = createConfig("127.0.0.1", 0, map);
+      Configuration config1 = createConfig("127.0.0.1", 1, map);
 
       deployClusterConfiguration(config0, 1);
       deployClusterConfiguration(config1, 0);
@@ -99,6 +102,9 @@ public class TwoBrokerFailoverClusterTest extends OpenwireArtemisBaseTest {
 
    @After
    public void tearDown() throws Exception {
+      for (ActiveMQConnection conn : connections) {
+         conn.close();
+      }
       server0.stop();
       server1.stop();
    }

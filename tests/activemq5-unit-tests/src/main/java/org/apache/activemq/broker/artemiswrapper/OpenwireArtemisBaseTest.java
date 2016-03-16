@@ -34,7 +34,6 @@ import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
 import org.apache.activemq.artemis.jms.server.config.impl.JMSConfigurationImpl;
 import org.apache.activemq.artemis.jms.server.embedded.EmbeddedJMS;
 import org.apache.activemq.artemis.tests.util.ThreadLeakCheckRule;
-import org.apache.activemq.artemis.utils.uri.URISchema;
 import org.apache.activemq.artemis.utils.uri.URISupport;
 import org.apache.activemq.broker.BrokerService;
 import org.junit.Assert;
@@ -47,7 +46,6 @@ import javax.management.MBeanServerInvocationHandler;
 import javax.management.ObjectName;
 
 public class OpenwireArtemisBaseTest {
-
    @Rule
    public CleanupThreadRule cleanupRules = new CleanupThreadRule();
 

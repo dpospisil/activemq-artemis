@@ -33,7 +33,6 @@ import org.apache.activemq.ActiveMQConnectionFactory;
 import org.apache.activemq.artemis.core.config.Configuration;
 import org.apache.activemq.artemis.jms.server.config.impl.JMSConfigurationImpl;
 import org.apache.activemq.artemis.jms.server.embedded.EmbeddedJMS;
-import org.apache.activemq.broker.BrokerService;
 import org.apache.activemq.broker.artemiswrapper.OpenwireArtemisBaseTest;
 import org.junit.After;
 import org.junit.Before;
@@ -97,28 +96,35 @@ public class FailoverTimeoutTest extends OpenwireArtemisBaseTest {
       long timeout = 1000;
       ActiveMQConnectionFactory cf = new ActiveMQConnectionFactory("failover:(" + tcpUri + ")?timeout=" + timeout + "&useExponentialBackOff=false");
       Connection connection = cf.createConnection();
-      Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
-      MessageProducer producer = session.createProducer(session.createQueue(QUEUE_NAME));
-      TextMessage message = session.createTextMessage("Test message");
-      producer.send(message);
-
-      server.stop();
-
       try {
+         Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
+         MessageProducer producer = session.createProducer(session.createQueue(QUEUE_NAME));
+         TextMessage message = session.createTextMessage("Test message");
          producer.send(message);
+
+         server.stop();
+
+         try {
+            producer.send(message);
+         }
+         catch (JMSException jmse) {
+            assertEquals("Failover timeout of " + timeout + " ms reached.", jmse.getMessage());
+         }
+
+         Configuration config = createConfig(0);
+         server = new EmbeddedJMS().setConfiguration(config).setJmsConfiguration(new JMSConfigurationImpl());
+         server.start();
+
+         producer.send(message);
+
+         server.stop();
+         server = null;
       }
-      catch (JMSException jmse) {
-         assertEquals("Failover timeout of " + timeout + " ms reached.", jmse.getMessage());
+      finally {
+         if (connection != null) {
+            connection.close();
+         }
       }
-
-      Configuration config = createConfig(0);
-      server = new EmbeddedJMS().setConfiguration(config).setJmsConfiguration(new JMSConfigurationImpl());
-      server.start();
-
-      producer.send(message);
-
-      server.stop();
-      server = null;
    }
 
    @Test
@@ -126,10 +132,17 @@ public class FailoverTimeoutTest extends OpenwireArtemisBaseTest {
 
       ActiveMQConnectionFactory cf = new ActiveMQConnectionFactory("failover:(" + tcpUri + ")?useExponentialBackOff=false");
       ActiveMQConnection connection = (ActiveMQConnection) cf.createConnection();
-      connection.start();
-      FailoverTransport failoverTransport = connection.getTransport().narrow(FailoverTransport.class);
+      try {
+         connection.start();
+         FailoverTransport failoverTransport = connection.getTransport().narrow(FailoverTransport.class);
 
-      URI[] bunchOfUnknownAndOneKnown = new URI[]{new URI("tcp://unknownHost:" + tcpUri.getPort()), new URI("tcp://unknownHost2:" + tcpUri.getPort()), new URI("tcp://localhost:2222")};
-      failoverTransport.add(false, bunchOfUnknownAndOneKnown);
+         URI[] bunchOfUnknownAndOneKnown = new URI[]{new URI("tcp://unknownHost:" + tcpUri.getPort()), new URI("tcp://unknownHost2:" + tcpUri.getPort()), new URI("tcp://localhost:2222")};
+         failoverTransport.add(false, bunchOfUnknownAndOneKnown);
+      }
+      finally {
+         if (connection != null) {
+            connection.close();
+         }
+      }
    }
 }

@@ -320,11 +320,6 @@ public class AMQConsumer implements BrowserListener {
       session.deliverMessage(md);
    }
 
-   public boolean handledTransactionalMsg() {
-      // TODO Auto-generated method stub
-      return false;
-   }
-
    //this is called before session commit a local tx
    public void finishTx() throws Exception {
       MessageInfo lastMi = null;

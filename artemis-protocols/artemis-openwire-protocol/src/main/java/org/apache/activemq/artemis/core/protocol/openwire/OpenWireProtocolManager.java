@@ -367,7 +367,6 @@ public class OpenWireProtocolManager implements ProtocolManager<Interceptor>, Cl
       boolean originalFlowControl = context.isProducerFlowControl();
       final AMQProducerBrokerExchange producerExchange = new AMQProducerBrokerExchange();
       producerExchange.setConnectionContext(context);
-      producerExchange.setMutable(true);
       producerExchange.setProducerState(new ProducerState(new ProducerInfo()));
       try {
          context.setProducerFlowControl(false);

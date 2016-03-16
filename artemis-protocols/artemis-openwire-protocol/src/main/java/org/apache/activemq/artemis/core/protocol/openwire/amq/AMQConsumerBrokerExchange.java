@@ -28,35 +28,12 @@ public abstract class AMQConsumerBrokerExchange {
    public AMQConsumerBrokerExchange(AMQSession amqSession) {
       this.amqSession = amqSession;
    }
-
-   /**
-    * @return the connectionContext
-    */
-   public AMQConnectionContext getConnectionContext() {
-      return this.connectionContext;
-   }
-
    /**
     * @param connectionContext the connectionContext to set
     */
    public void setConnectionContext(AMQConnectionContext connectionContext) {
       this.connectionContext = connectionContext;
    }
-
-   /**
-    * @return the wildcard
-    */
-   public boolean isWildcard() {
-      return this.wildcard;
-   }
-
-   /**
-    * @param wildcard the wildcard to set
-    */
-   public void setWildcard(boolean wildcard) {
-      this.wildcard = wildcard;
-   }
-
    public abstract void acknowledge(MessageAck ack) throws Exception;
 
    public abstract void processMessagePull(MessagePull messagePull) throws Exception;

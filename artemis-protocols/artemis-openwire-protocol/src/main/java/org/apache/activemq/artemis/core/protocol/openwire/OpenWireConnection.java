@@ -439,18 +439,6 @@ public class OpenWireConnection extends AbstractRemotingConnection implements Se
          }
          synchronized (consumerExchanges) {
             result.setConnectionContext(context);
-            SessionState ss = state.getSessionState(id.getParentId());
-            if (ss != null) {
-               ConsumerState cs = ss.getConsumerState(id);
-               if (cs != null) {
-                  ConsumerInfo info = cs.getInfo();
-                  if (info != null) {
-                     if (info.getDestination() != null && info.getDestination().isPattern()) {
-                        result.setWildcard(true);
-                     }
-                  }
-               }
-            }
             consumerExchanges.put(id, result);
          }
       }
@@ -476,7 +464,6 @@ public class OpenWireConnection extends AbstractRemotingConnection implements Se
                ProducerState producerState = ss.getProducerState(id);
                if (producerState != null && producerState.getInfo() != null) {
                   ProducerInfo info = producerState.getInfo();
-                  result.setMutable(info.getDestination() == null || info.getDestination().isComposite());
                }
             }
             producerExchanges.put(id, result);

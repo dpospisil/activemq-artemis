@@ -387,7 +387,7 @@ public class OpenWireProtocolManager implements ProtocolManager<Interceptor>, Cl
             brokerName = InetAddressUtil.getLocalHostName().toLowerCase(Locale.ENGLISH);
          }
          catch (Exception e) {
-            brokerName = "localhost";
+            brokerName = server.getNodeID().toString();
          }
       }
       return brokerName;

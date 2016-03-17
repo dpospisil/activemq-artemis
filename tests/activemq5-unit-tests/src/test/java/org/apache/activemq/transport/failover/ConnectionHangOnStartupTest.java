@@ -76,8 +76,6 @@ public class ConnectionHangOnStartupTest extends OpenwireArtemisBaseTest {
 
    @Test(timeout = 60000)
    public void testInitialWireFormatNegotiationTimeout() throws Exception {
-      Assert.fail("this test pass but it'll leave a thread running all the time, fix it before adding the test to the testsuite!");
-      /*
       final AtomicReference<Connection> conn = new AtomicReference<>();
       final CountDownLatch connStarted = new CountDownLatch(1);
 
@@ -96,11 +94,10 @@ public class ConnectionHangOnStartupTest extends OpenwireArtemisBaseTest {
       };
       t.start();
       createMaster();
+
       // slave will never start unless the master dies!
       //createSlave();
 
-      conn.get().stop();
-      */
+      conn.get().close();
    }
-
 }

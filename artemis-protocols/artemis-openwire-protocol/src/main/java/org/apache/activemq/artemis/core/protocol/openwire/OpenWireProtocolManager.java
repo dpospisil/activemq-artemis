@@ -568,6 +568,10 @@ public class OpenWireProtocolManager implements ProtocolManager<Interceptor>, Cl
       return this.updateClusterClientsOnRemove;
    }
 
+   public void setBrokerName(String name) {
+      this.brokerName = name;
+   }
+
    public static XAException newXAException(String s, int errorCode) {
       XAException xaException = new XAException(s + " " + "xaErrorCode:" + errorCode);
       xaException.errorCode = errorCode;

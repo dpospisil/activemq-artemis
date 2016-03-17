@@ -28,6 +28,8 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 public class FailoverRandomTest extends OpenwireArtemisBaseTest {
@@ -36,8 +38,17 @@ public class FailoverRandomTest extends OpenwireArtemisBaseTest {
 
    @Before
    public void setUp() throws Exception {
-      Configuration config0 = createConfig(0);
-      Configuration config1 = createConfig(1);
+      Map<String, String> params = new HashMap<String, String>();
+
+      params.put("rebalanceClusterClients", "true");
+      params.put("updateClusterClients", "true");
+      params.put("updateClusterClientsOnRemove", "true");
+      params.put("brokerName", "A");
+
+      Configuration config0 = createConfig("127.0.0.1", 0, params);
+
+      params.put("brokerName", "B");
+      Configuration config1 = createConfig("127.0.0.2", 1, params);
 
       deployClusterConfiguration(config0, 1);
       deployClusterConfiguration(config1, 0);
@@ -47,9 +58,6 @@ public class FailoverRandomTest extends OpenwireArtemisBaseTest {
 
       server0.start();
       server1.start();
-
-      server0.getActiveMQServer().setIdentity("BrokerA");
-      server1.getActiveMQServer().setIdentity("BrokerB");
 
       Assert.assertTrue(server0.waitClusterForming(100, TimeUnit.MILLISECONDS, 20, 2));
       Assert.assertTrue(server1.waitClusterForming(100, TimeUnit.MILLISECONDS, 20, 2));
@@ -68,7 +76,7 @@ public class FailoverRandomTest extends OpenwireArtemisBaseTest {
 
       ActiveMQConnection connection = (ActiveMQConnection) cf.createConnection();
       connection.start();
-      String brokerName1 = connection.getBrokerName();
+      final String brokerName1 = connection.getBrokerName();
       Assert.assertNotNull(brokerName1);
       connection.close();
 

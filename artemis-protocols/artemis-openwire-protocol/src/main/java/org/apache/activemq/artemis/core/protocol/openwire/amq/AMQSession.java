@@ -165,6 +165,14 @@ public class AMQSession implements SessionCallback {
    }
 
    @Override
+   public void browserFinished(ServerConsumer consumer) {
+      AMQConsumer theConsumer = ((AMQServerConsumer)consumer).getAmqConsumer();
+      if (theConsumer != null) {
+         theConsumer.browseFinished();
+      }
+   }
+
+   @Override
    public boolean isWritable(ReadyListener callback) {
       return connection.isWritable(callback);
    }

@@ -1213,6 +1213,7 @@ public class ServerConsumerImpl implements ServerConsumer, ReadyListener {
                ref = null;
                synchronized (messageQueue) {
                   if (!iterator.hasNext()) {
+                     callback.browserFinished(ServerConsumerImpl.this);
                      break;
                   }
 

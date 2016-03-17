@@ -94,7 +94,7 @@ public class AMQServerSession extends ServerSessionImpl {
       Set<ServerConsumer> consumersClone = new HashSet<>(consumers.values());
       for (ServerConsumer consumer : consumersClone) {
          AMQServerConsumer amqConsumer = (AMQServerConsumer)consumer;
-         amqConsumer.closing();//prevent redeliver
+         amqConsumer.setStarted(false);
       }
 
       synchronized (this) {

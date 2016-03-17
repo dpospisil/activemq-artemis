@@ -46,7 +46,7 @@ import org.apache.activemq.command.MessagePull;
 import org.apache.activemq.command.TransactionId;
 import org.apache.activemq.wireformat.WireFormat;
 
-public class AMQConsumer implements BrowserListener {
+public class AMQConsumer {
 
    private AMQSession session;
    private org.apache.activemq.command.ActiveMQDestination actualDest;
@@ -137,7 +137,8 @@ public class AMQConsumer implements BrowserListener {
       }
       else {
          SimpleString queueName = new SimpleString("jms.queue." + this.actualDest.getPhysicalName());
-         coreSession.createConsumer(nativeId, queueName, selector, info.isBrowser(), false, -1);
+         AMQServerConsumer serverConsumer = (AMQServerConsumer)coreSession.createConsumer(nativeId, queueName, selector, info.isBrowser(), false, -1);
+         serverConsumer.setAmqConsumer(this);
          AddressSettings addrSettings = session.getCoreServer().getAddressSettingsRepository().getMatch(queueName.toString());
          if (addrSettings != null) {
             //see PolicyEntry
@@ -150,12 +151,6 @@ public class AMQConsumer implements BrowserListener {
             }
          }
       }
-
-      if (info.isBrowser()) {
-         AMQServerConsumer coreConsumer = coreSession.getConsumer(nativeId);
-         coreConsumer.setBrowserListener(this);
-      }
-
    }
 
    public long getNativeId() {
@@ -310,7 +305,6 @@ public class AMQConsumer implements BrowserListener {
       acquireCredit(n);
    }
 
-   @Override
    public void browseFinished() {
       MessageDispatch md = new MessageDispatch();
       md.setConsumerId(info.getConsumerId());

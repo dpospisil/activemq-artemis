@@ -22,18 +22,11 @@ import org.apache.activemq.command.MessagePull;
 public abstract class AMQConsumerBrokerExchange {
 
    protected final AMQSession amqSession;
-   private AMQConnectionContext connectionContext;
-   private boolean wildcard;
 
    public AMQConsumerBrokerExchange(AMQSession amqSession) {
       this.amqSession = amqSession;
    }
-   /**
-    * @param connectionContext the connectionContext to set
-    */
-   public void setConnectionContext(AMQConnectionContext connectionContext) {
-      this.connectionContext = connectionContext;
-   }
+
    public abstract void acknowledge(MessageAck ack) throws Exception;
 
    public abstract void processMessagePull(MessagePull messagePull) throws Exception;

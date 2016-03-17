@@ -438,7 +438,6 @@ public class OpenWireConnection extends AbstractRemotingConnection implements Se
             result = new AMQCompositeConsumerBrokerExchange(amqSession, consumerMap);
          }
          synchronized (consumerExchanges) {
-            result.setConnectionContext(context);
             consumerExchanges.put(id, result);
          }
       }

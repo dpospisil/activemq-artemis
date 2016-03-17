@@ -484,6 +484,11 @@ public class HangConsumerTest extends ActiveMQTestBase {
       }
 
       @Override
+      public void browserFinished(ServerConsumer consumer) {
+
+      }
+
+      @Override
       public boolean isWritable(ReadyListener callback) {
          return true;
       }
